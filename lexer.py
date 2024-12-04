@@ -43,17 +43,12 @@ non_terminals = [
     'LIBRARY',
 ]
 
-# types = {
-#     'void': 'VOID',
-#     'int': 'INT',
-#     'float': 'FLOAT',
-#     'char': 'CHAR',
-# }
 types = ['void', 'int', 'float', 'char']
 
-reserved_functions = [
-    'print'
-]
+reserved_functions = {
+    'main': 'MAIN',
+    'print': 'PRINT'
+}
 
 reserved = {
     'return': 'RETURN',
@@ -132,7 +127,7 @@ string_formatter = {
 }
 
 tokens = list(reserved.values()) \
-    + reserved_functions \
+    +list(reserved_functions.values()) \
     + list(string_formatter.values()) \
     + ignore \
     + terminals + non_terminals \
@@ -331,6 +326,10 @@ def t_ID(t):
         t.type = 'CHAR'
     elif t.value in types:
         t.type = 'TYPE'
+    elif t.value in reserved:
+        t.type = reserved[t.value]
+    elif t.value in reserved_functions:
+        t.type = reserved_functions[t.value]
     return _typecheck(t)
 
 def t_NUMBER(t):

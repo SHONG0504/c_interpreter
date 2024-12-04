@@ -28,6 +28,15 @@ class Interpreter:
     def generate_flow_graph(self):
         pass
 
+    def interpret(self):
+        print("Start of program")
+        if not main_call:
+            print("There is nothing to run")
+            return
+
+        for inum, statement in enumerate(main_call):
+            print(f"{inum}: {statement}")
+
     def generate_asm(self):
         pass
 
@@ -45,6 +54,7 @@ def main(fpath: str) -> None:
     interpreter.tokenize()
     interpreter.print_tokens()
     interpreter.generate_ast(debug=True)
+    # interpreter.interpret()
 
 if __name__ == "__main__":
     argc = len(sys.argv)

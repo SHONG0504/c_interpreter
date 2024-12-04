@@ -1,10 +1,15 @@
 import ply.yacc as yacc
+from collections import deque
+
+# TODO: Add type checking to every production
 
 """
 Stores states of variables
 {ID: {'type': TYPE, 'value': <value of type>}}
 """
-variables = {}
+variables = {
+    'global': {}
+}
 
 """
 Stores information of functions and local function stack
@@ -12,6 +17,9 @@ Stores information of functions and local function stack
 """
 functions = {}
 
+call_stack = deque()
+
+main_call = []
 
 
 precedence = (
@@ -33,7 +41,11 @@ def p_statements(p):
 
 def p_statement(p):
     """statement : declaration
-                 | function_call SEMICOLON"""
+                 | function_call SEMICOLON
+                 | function_declaration
+                 | function_definition
+                 | return
+                 | main"""
     # TODO
     p[0] = p[1]
 
@@ -47,7 +59,7 @@ def p_variable_declaration(p):
         'value': None
     }
 
-    print(variables)
+    print(f"{variables}")
     p[0] = {
         'variable': p[2],
         'type': p[1],
@@ -59,16 +71,21 @@ def p_literal(p):
                | SINGLE_QUOTE CHAR SINGLE_QUOTE"""
     # TODO: Support other literal types
     if len(p) == 2:
-        if '.' in p[1]:
-            p[0] = float(p[1])
-        else:
-            p[0] = int(p[1])
+        p[0] = p[1]
     else:
         p[0] = p[2]
 
 def p_function_call(p):
     """function_call : ID L_ROUND arguments R_ROUND"""
-    print(f"function_call: {p}")
+    # TODO: finish this
+
+    # print(f"{functions}")
+
+    p[0] = {
+        'type': functions[p[1]]['type'],
+        'name': p[1],
+        'arguments': p[3] if p[3] else None
+    }
 
 def p_arguments(p):
     """arguments : ID
@@ -87,11 +104,48 @@ def p_arguments(p):
 
 
 # Rules to handle functions
-def p_function_prototype(p):
-    """function_prototype : TYPE ID L_ROUND"""
+
+def p_function_declaration(p):
+    """function_declaration : function_prototype SEMICOLON"""
+
+    global functions
+    functions[p[1]['name']] = {
+        'type': p[1]['type'],
+        'parameters': p[1]['parameters']
+    }
+
+    p[0] = functions[p[1]['name']]
 
 def p_function_definition(p):
-    """"""
+    """function_definition : function_prototype L_CURLY statements R_CURLY"""
+
+    global functions
+    functions[p[1]['name']] = {
+        'type': p[1]['type'],
+        'parameters': p[1]['parameters'],
+        'body': p[3]
+    }
+
+    p[0] = functions[p[1]['name']]
+
+def p_function_prototype(p):
+    """function_prototype : TYPE ID L_ROUND parameters R_ROUND"""
+
+    p[0] = {
+        'type': p[1],
+        'name': p[2],
+        'parameters': p[4] if p[4] else None
+    }
+
+def p_main(p):
+    """main : TYPE MAIN L_ROUND parameters R_ROUND L_CURLY statements R_CURLY"""
+    # Special case for function_definitions for main function
+    global call_stack
+
+    print(f"main: {len(p[7])} statements")
+    for statement in p[7]:
+        print(statement)
+
 
 def p_parameters(p):
     """parameters : parameter COMMA parameters
@@ -112,6 +166,23 @@ def p_parameter(p):
     """parameter : TYPE ID"""
     p[0] = {'type': p[1], 'name': p[2]}
 
+def p_return(p):
+    """return : RETURN function_call SEMICOLON
+              | RETURN ID SEMICOLON
+              | RETURN literal SEMICOLON
+              | RETURN SEMICOLON"""
+    
+    if len(p) == 4:
+        p[0] = {
+            'type': 'return',
+            'value': p[2]
+        }
+    else:
+        p[0] = {
+            'type': 'return',
+            'value': None
+        }
+
 
 def p_empty(p):
     'empty :'
@@ -119,7 +190,7 @@ def p_empty(p):
 
 def p_error(p):
     if p:
-        print(f"Syntax error at ({p.value}, {p.type}), line {p.lexpos}")
+        print(f"Syntax error at ({p.value}, {p.type}), line {p.lineno}")
     else:
         print("Syntax error at EOF")
     exit(1)
