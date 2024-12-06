@@ -1,4 +1,4 @@
-import ply.lex as lex
+import decimal
 
 # TODO: Add support for tokenizing double and single quote string literals
 # TODO: Clean up ordering and organize by category
@@ -37,16 +37,27 @@ non_terminals = [
     'ID',
     'NUMBER',
     'FORMAT',
-    'CHAR',
     'STRING',
     'NEWLINE_LITERAL',
     'LIBRARY',
 ]
 
-types = ['void', 'int', 'float', 'char']
+types = {
+    'void': 'VOID',
+    'int': 'INT',
+    'float': 'FLOAT',
+    'char': 'CHAR'
+}
+
+return_types = {
+    'void': 'TYPE_VOID',
+    'int': 'TYPE_INT',
+    'float': 'TYPE_FLOAT',
+    'char': 'TYPE_CHAR'
+}
 
 reserved_functions = {
-    'main': 'MAIN',
+    # 'main': 'MAIN',
     'print': 'PRINT'
 }
 
@@ -127,11 +138,13 @@ string_formatter = {
 }
 
 tokens = list(reserved.values()) \
-    +list(reserved_functions.values()) \
+    + list(reserved_functions.values()) \
     + list(string_formatter.values()) \
     + ignore \
     + terminals + non_terminals \
-    + list(operators.values())
+    + list(operators.values()) \
+    + list(types.values()) \
+    + list(return_types.values())
 
 
 def _typecheck(t):
@@ -324,8 +337,8 @@ def t_ID(t):
             print(f"ERROR: {t.value} following single quote")
             exit(1)
         t.type = 'CHAR'
-    elif t.value in types:
-        t.type = 'TYPE'
+    elif t.value in return_types:
+        t.type = return_types[t.value]
     elif t.value in reserved:
         t.type = reserved[t.value]
     elif t.value in reserved_functions:
@@ -333,7 +346,8 @@ def t_ID(t):
     return _typecheck(t)
 
 def t_NUMBER(t):
-    r'\d+'
+    r'(([\+\-]*\d*\.*\d+[eE])?([\+\-]*\d*\.*\d+))'
+    # r'\d+'
 
     if read_comment:
         t.type = 'COMMENT'
@@ -342,7 +356,12 @@ def t_NUMBER(t):
     elif prev_token == 'SINGLE_QUOTE':
         t.type = 'CHAR'
     else:
-        t.value = int(t.value)
+        if '.' in t.value:
+            t.type = 'FLOAT'
+            t.value = float(decimal.Decimal(t.value))
+        else:
+            t.type = 'INT'
+            t.value = int(decimal.Decimal(t.value))
     return _typecheck(t)
 
 def t_STAR(t):
