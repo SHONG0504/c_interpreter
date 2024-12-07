@@ -57,7 +57,6 @@ return_types = {
 }
 
 reserved_functions = {
-    # 'main': 'MAIN',
     'print': 'PRINT'
 }
 
@@ -120,16 +119,21 @@ operators = comparison_operators | \
     bitwise_operators | \
     assignment_operators
 
-brackets = {
+left_brackets = {
     '(': 'L_ROUND',
-    ')': 'R_ROUND',
     '[': 'L_SQUARE',
-    ']': 'R_SQUARE',
     '{': 'L_CURLY',
-    '}': 'R_CURLY',
-    # '<': 'L_POINTY', # Not needed?
-    # '>': 'R_POINTY'
+    # '<': 'L_POINTY',
 }
+
+right_brackets = {
+    ')': 'R_ROUND',
+    ']': 'R_SQUARE',
+    '}': 'R_CURLY',
+    # '>': 'R_POINTY',
+}
+
+brackets = left_brackets | right_brackets
 
 string_formatter = {
     # https://cplusplus.com/reference/cstdio/printf/
@@ -144,7 +148,8 @@ tokens = list(reserved.values()) \
     + terminals + non_terminals \
     + list(operators.values()) \
     + list(types.values()) \
-    + list(return_types.values())
+    + list(return_types.values()) \
+    + ['NEGATIVE']
 
 
 def _typecheck(t):
@@ -230,8 +235,14 @@ def t_arithmetic_operators(t):
         t.type = 'COMMENT'
     elif read_string:
         t.type = 'STRING'
+    elif t.value == '-':
+        if (prev_token in operators.values()) \
+            or (prev_token in left_brackets.values()):
+            t.type = 'NEGATIVE'
+        else:
+            t.type = 'MINUS'
     elif t.value == '*':
-        if prev_token in types:
+        if prev_token in return_types.values():
             t.type = 'POINTER'
         else:
             t.type = 'MULTIPLY'

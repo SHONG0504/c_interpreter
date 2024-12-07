@@ -1,11 +1,9 @@
-from state import State
+from state import *
 
 # TODO: Add type checking to every production
 # TODO: Ensure that function calls fail if called before function is declared/defined
 # TODO: Add const variables
 # TODO: Rename declare_variables to avoid confusion with variable_declaration
-
-state = State()
 
 # AST Dict Keys
 INSTRUCTION = 'instruction'
@@ -15,6 +13,7 @@ TYPE = 'type'
 ARGUMENTS = 'arguments' # Input to function call
 PARAMETERS = 'parameters' # Input definitions of function
 BODY = 'body' # Instructions of a function
+NEGATIVE = 'negative' # Indicates that evaluation result needs to be multiplied by -1
 
 # Types of instructions
 NOTHING = 'nothing'
@@ -25,6 +24,13 @@ FUNCTION_CALL = 'function_call'
 VARIABLE_DECLARATION = 'variable_declaration'
 VARIABLE_ASSIGNMENT = 'variable_assignment'
 OPERATION = 'operation'
+MULTIPLY = 'multiply'
+DIVIDE = 'divide'
+ADD = 'add'
+SUBTRACT = 'subtract'
+
+L = 'left'
+R = 'right'
 
 """ Instruction handling
 VAR_LOOKUP:
@@ -36,7 +42,8 @@ VAR_LOOKUP:
 
 precedence = (
     ('left', 'PLUS', 'MINUS'),
-    ('left', 'MULTIPLY', 'DIVIDE')
+    ('left', 'MULTIPLY', 'DIVIDE'),
+    ('right', 'NEGATIVE')
 )
 
 def p_program(p):
@@ -46,27 +53,42 @@ def p_program(p):
     print(f"{len(p[1])} global statements")
     for index, statement in enumerate(p[1]):
         print(f"\t{index}: {statement}")
-        if statement[INSTRUCTION] == VARIABLE_DECLARATION:
-            state.global_variables[statement[NAME]] = {
-                TYPE: statement[TYPE],
-                VALUE: statement[VALUE]
+        f = statement[NAME]
+        t = statement[TYPE] if TYPE in statement else None
+        v = statement[VALUE] if VALUE in statement else None
+        p = statement[PARAMETERS] if PARAMETERS in statement else None
+        b = statement[BODY] if BODY in statement else None
+        i = statement[INSTRUCTION]
+
+        if i == VARIABLE_DECLARATION:
+            state.global_variables[f] = {
+                TYPE: t,
+                VALUE: v
             }
-        elif statement[INSTRUCTION] == VARIABLE_ASSIGNMENT:
-            if statement[NAME] not in state.global_variables:
-                print(f"Global variable {statement[NAME]} assigned before declaration.")
+        elif i == VARIABLE_ASSIGNMENT:
+            if f not in state.global_variables:
+                print(f"Global variable {f} assigned before declaration.")
                 exit(1)
-            if statement[VALUE][TYPE] != state.global_variables[statement[NAME]][TYPE]:
-                print(f"Incorrect type assignment ({statement[VALUE][TYPE]}) for variable {statement[NAME]} ({state.global_variables[statement[NAME]][TYPE]})")
+            if v[TYPE] != state.global_variables[f][TYPE]:
+                print(f"Incorrect type assignment ({v[TYPE]}) for variable {f} ({state.global_variables[f][TYPE]})")
                 exit(1)
-            state.global_variables[statement[NAME]][VALUE] = statement[VALUE]
-        elif statement[INSTRUCTION] == FUNCTION_DECLARATION:
+            state.global_variables[f][VALUE] = v
+        elif i == FUNCTION_DECLARATION:
             # Functions do not need to be declared if defined before calling
-            state.functions[statement[NAME]] = {
-                TYPE: statement[TYPE],
-                PARAMETERS: statement[PARAMETERS],
+            state.functions[f] = {
+                TYPE: t,
+                PARAMETERS: p,
             }
-        elif statement[INSTRUCTION] == FUNCTION_DEFINITION:
-            pass
+        elif i == FUNCTION_DEFINITION:
+            if f in state.functions:
+                if t != state.functions[f][TYPE]:
+                    print(f"{f}: Type of declaration ({state.functions[f][TYPE]}) and definition ({t}) does not match.")
+                    exit(1)
+            state.functions[f] = {
+                TYPE: t,
+                PARAMETERS: p,
+                BODY: b
+            }
 
 
 # Statements that occur outside of functions
@@ -99,7 +121,7 @@ def p_global_statement(p):
 # Statements that occur inside functions
 def p_function_statements(p):
     """function_statements : function_statement function_statements
-                         | empty"""
+                           | empty"""
     if len(p) == 2:
         p[0] = []
     else:
@@ -116,13 +138,10 @@ def p_function_statement(p):
 
 def p_variable_declaration(p):
     """variable_declaration : type declare_variables SEMICOLON"""
-    # Do not handle variable assignments here
-
-    print(f"declaration {p[2]}")
 
     p[0] = []
     for index, var_info in enumerate(p[2]):
-        print(f"\tvar {index}: {var_info}")
+        # print(f"\tvar {index}: {var_info}")
         if type(var_info) == str:
             name = var_info
             value = None
@@ -138,14 +157,12 @@ def p_variable_declaration(p):
             TYPE: p[1],
             VALUE: value
         })
-        
-    # print(f"Declaration: {p[0]}")
 
 def p_declare_variables(p):
     """declare_variables : ID
-                         | ID ASSIGN assignable
+                         | ID ASSIGN expr
                          | ID COMMA declare_variables
-                         | ID ASSIGN assignable COMMA declare_variables"""
+                         | ID ASSIGN expr COMMA declare_variables"""
 
     if len(p) == 2:
         # ID
@@ -174,18 +191,104 @@ def p_declare_variables(p):
                 VALUE: value
             }]
     else:
-        # ID ASSIGN assignable COMMA variables
+        # ID ASSIGN assignable COMMA declare_variables
         p[0] = [{
             NAME: p[1],
             VALUE: p[3]
         }] + p[5]
 
-def p_assignable(p):
-    """assignable : ID
-                  | literal
-                  | function_call"""
-    # TODO: Handle *,/,+,- operations
-    p[0] = p[1]
+
+def p_expr(p):
+    """expr : term expr_prime"""
+
+    if p[2] is not None:
+        if p[2][INSTRUCTION] in [ADD, SUBTRACT]:
+            p[2][VALUE][L] = p[1]
+        else:
+            raise Exception("Not processed yet")
+        p[0] = p[2]
+    else:
+        p[0] = p[1]
+
+def p_expr_prime(p):
+    """expr_prime : PLUS term expr_prime
+                  | MINUS term expr_prime
+                  | empty"""
+    if len(p) == 4:
+        if p[3] is not None:
+            p[3][VALUE][L] = p[2]
+            p[0] = p[3]
+        else:
+            p[0] = {
+                INSTRUCTION: ADD if p[1] == '+' else SUBTRACT,
+                VALUE: {
+                    L: None,
+                    R: p[2]
+                }
+            }   
+    else:
+        pass
+
+def p_term(p):
+    """term : factor term_prime"""
+
+    if p[2] is not None:
+        if p[2][INSTRUCTION] in [MULTIPLY, DIVIDE]:
+            p[2][VALUE][L] = p[1]
+        else:
+            raise Exception("Not processed yet")
+        p[0] = p[2]
+    else:
+        p[0] = p[1]
+
+def p_term_prime(p):
+    """term_prime : MULTIPLY factor term_prime
+                  | DIVIDE factor term_prime
+                  | empty"""
+
+    if len(p) == 4:
+        if p[3] is not None:
+            p[3][VALUE][L] = p[2]
+            p[0] = p[3]
+        else:
+            p[0] = {
+                INSTRUCTION: MULTIPLY if p[1] == '*' else DIVIDE,
+                VALUE: {
+                    L: None,
+                    R: p[2]
+                }
+            }      
+    else:
+        pass
+
+def p_factor(p):
+    """factor : ID
+              | literal
+              | function_call
+              | L_ROUND expr R_ROUND
+              | NEGATIVE factor"""
+    
+    if p[1] == '-':
+        # NEGATIVE factor
+        p[2][NEGATIVE] = True
+        p[0] = p[2]
+    else:
+        if p[1] == '(':
+            # L_ROUND expr R_ROUND
+            p[0] = p[2]
+        elif type(p[1]) == str:
+            # ID
+            p[0] = {
+                NAME: p[1]
+            }
+        else:
+            # literal
+            # function_call
+            p[0] = p[1]
+        p[0][NEGATIVE] = False
+
+
+
     
 
 def p_literal(p):
@@ -193,20 +296,10 @@ def p_literal(p):
                | FLOAT
                | SINGLE_QUOTE CHAR SINGLE_QUOTE"""
     if len(p) == 2:
-        p[0] = p[1]
-        if type(p[1]) == int:
-            p[0] = {
-                TYPE: 'int',
-                VALUE: p[1]
-            }
-        elif type(p[1]) == float:
-            p[0] = {
-                TYPE: 'float',
-                VALUE: p[1]
-            }
-        else:
-            print(f"Error parsing literal {p[0]}, type: {type(p[0])}")
-            exit(1)
+        p[0] = {
+            TYPE: 'int' if type(p[1]) == int else 'float',
+            VALUE: p[1],
+        }
     else:
         if len(p[2]) == 1:
             p[0] = {
@@ -219,16 +312,9 @@ def p_literal(p):
 
 def p_function_call(p):
     """function_call : ID L_ROUND arguments R_ROUND"""
-    # TODO: finish this
-
-    # Check if function has been declared before calling
-    # if p[1] not in state.functions:
-    #     print(f"ERROR: function {p[1]} called before declaration.")
-    #     exit(1)
 
     p[0] = {
         INSTRUCTION: 'function_call',
-        # TYPE: state.functions[p[1]][TYPE],
         NAME: p[1],
         ARGUMENTS: p[3] if p[3] else None
     }
@@ -259,12 +345,6 @@ def p_argument(p):
 def p_function_declaration(p):
     """function_declaration : function_prototype SEMICOLON"""
 
-    # state.functions[p[1][NAME]] = {
-    #     TYPE: p[1][TYPE],
-    #     PARAMETERS: p[1][PARAMETERS]
-    # }
-
-    # p[0] = state.functions[p[1][NAME]]
     p[0] = {
         INSTRUCTION: FUNCTION_DECLARATION,
         NAME: p[1][NAME],
@@ -274,21 +354,6 @@ def p_function_declaration(p):
 
 def p_function_definition(p):
     """function_definition : function_prototype L_CURLY function_statements R_CURLY"""
-
-    # Handle variable checks here
-
-    # Set current function being parsed
-    # state.current_function = {
-    #     NAME: p[1][NAME],
-    #     TYPE: p[1][TYPE]
-    # }
-
-    # Store function information in memory
-    # state.functions[p[1][NAME]] = {
-    #     TYPE: p[1][TYPE],
-    #     PARAMETERS: p[1][PARAMETERS],
-    #     BODY: p[3]
-    # }
 
     local_variables = {}
 
@@ -327,7 +392,6 @@ def p_function_definition(p):
                 # print(f"Return type of function {p[1][NAME]} matches.")
                 pass
 
-    # p[0] = {NAME: p[1][NAME]} | state.functions[p[1][NAME]]
     p[0] = {
         INSTRUCTION: FUNCTION_DEFINITION,
         NAME: p[1][NAME],
@@ -335,8 +399,6 @@ def p_function_definition(p):
         PARAMETERS: p[1][PARAMETERS],
         BODY: p[3]
     }
-    # state.current_function = None
-    # print(f"Definition {p[0]}")
 
 def p_function_prototype(p):
     """function_prototype : type ID L_ROUND parameters R_ROUND"""
@@ -376,6 +438,7 @@ def p_return(p):
               | RETURN ID SEMICOLON
               | RETURN literal SEMICOLON
               | RETURN SEMICOLON"""
+    # Replace with assignable
     
     if len(p) == 4:
         if type(p[2]) == str:
@@ -405,8 +468,16 @@ def p_type(p):
     p[0] = p[1]
 
 
-# Arithmetic operations
-# TODO
+
+
+
+
+
+
+
+
+
+
 
 def p_empty(p):
     'empty :'

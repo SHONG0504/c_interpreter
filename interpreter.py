@@ -1,6 +1,7 @@
 import os, sys
 import ply
 import graphviz
+import json
 
 import ply.lex as lex
 import ply.yacc as yacc
@@ -10,8 +11,8 @@ from parser import *
 
 class Interpreter:
     def __init__(self, fpath: str):
-        self.fpath = fpath
-        with open(fpath, 'r') as f:
+        self.fpath = os.path.abspath(fpath)
+        with open(self.fpath, 'r') as f:
             self.filedata = f.read()
         self.lexer = None
         self.parser = None
@@ -28,10 +29,11 @@ class Interpreter:
         )
         self.parser.parse(self.filedata, self.lexer)
 
-        print(f"Global: {state.global_variables}")
-        print("Functions:")
-        for f, v in state.functions.items():
-            print(f"\t{v[TYPE]} {f}")
+        print(f"{len(state.global_variables)} Global Variables:")
+        print(json.dumps(state.global_variables, indent=4))
+        print(f"\n\n{len(state.functions)} Functions:")
+        print(json.dumps(state.functions, indent=4))
+        return
 
     def generate_flow_graph(self):
         # if 'main' in state.functions:
@@ -72,4 +74,4 @@ if __name__ == "__main__":
     if (argc == 2):
         main(fpath=sys.argv[1])
     else:
-        main(fpath=os.path.abspath("./example.c"))
+        main(fpath=f"{os.path.dirname(__file__)}/examples/e1.c")
