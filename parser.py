@@ -3,13 +3,16 @@ from state import *
 # TODO: Add type checking to every production
 # TODO: Ensure that function calls fail if called before function is declared/defined
 # TODO: Add const variables
-# TODO: Rename declare_variables to avoid confusion with variable_declaration
+# TODO: Rename variable_list to avoid confusion with variable_declaration
 
 # AST Dict Keys
 INSTRUCTION = 'instruction'
 NAME = 'name'
 VALUE = 'value'
 TYPE = 'type'
+SIZE = 'size'
+POINTER = 'pointer'
+INDEX = 'index'
 ARGUMENTS = 'arguments' # Input to function call
 PARAMETERS = 'parameters' # Input definitions of function
 BODY = 'body' # Instructions of a function
@@ -17,6 +20,7 @@ NEGATIVE = 'negative' # Indicates that evaluation result needs to be multiplied 
 
 # Types of instructions
 NOTHING = 'nothing'
+RETURN = 'return'
 VAR_LOOKUP = 'var_lookup'
 FUNCTION_DECLARATION = 'function_declaration'
 FUNCTION_DEFINITION = 'function_definition'
@@ -106,7 +110,7 @@ def p_global_statements(p):
 
 def p_global_statement(p):
     """global_statement : variable_declaration
-                        | declare_variables SEMICOLON
+                        | variable_list SEMICOLON
                         | function_declaration
                         | function_definition"""
     
@@ -132,16 +136,99 @@ def p_function_statements(p):
 
 def p_function_statement(p):
     """function_statement : variable_declaration
+                          | variable_assignment
                           | function_call SEMICOLON
+                          | printf
                           | return"""
     p[0] = p[1]
 
+
 def p_variable_declaration(p):
-    """variable_declaration : type declare_variables SEMICOLON"""
+    """variable_declaration : type variable_list SEMICOLON"""
+
+    p[0] = [
+        var_info | {
+            INSTRUCTION: VARIABLE_DECLARATION,
+            TYPE: p[1]
+        } for var_info in p[2]
+    ]
+    print(p[0])
+
+def p_variable_list(p):
+    """variable_list : ID
+                     | ID ASSIGN expr
+                     | ID COMMA variable_list
+                     | ID ASSIGN expr COMMA variable_list
+                     | pointer_declarator
+                     | pointer_declarator ASSIGN pointer_initializer
+                     | pointer_declarator COMMA variable_list
+                     | pointer_declarator ASSIGN pointer_initializer COMMA variable_list"""
+    # Line 4n: declare
+    # Line 4n+1: assign
+    # Line 4n+2: declare, variable_list
+    # Line 4n+3: assign, variable_list
+    # TODO: possible simplification for ID and pointer_declarator
+
+    if type(p[1]) == str:
+        # Non pointer
+        if len(p) == 2:
+            # ID
+            p[0] = [{
+                NAME: p[1],
+                VALUE: None
+            }]
+        elif len(p) == 4:
+            if p[2] == ',':
+                # ID COMMA variables
+                p[0] = [{
+                    NAME: p[1],
+                    VALUE: None
+                }] + p[3]
+            else:
+                # ID ASSIGN expr
+                p[0] = [{
+                    NAME: p[1],
+                    VALUE: p[3]
+                }]
+        else:
+            # ID ASSIGN expr COMMA variable_list
+            p[0] = [{
+                NAME: p[1],
+                VALUE: p[3]
+            }] + p[5]
+    else:
+        # Pointer
+        if len(p) == 2:
+            # pointer_declarator
+            p[0] = p[1] | {VALUE: None}
+        elif len(p) == 4:
+            if p[2] == ',':
+                # pointer_declarator COMMA variable_list
+                p[0] = [
+                    p[1] | {
+                        VALUE: None
+                    }
+                ] + p[3]
+            else:
+                # pointer_declarator ASSIGN pointer_initializer
+                p[0] = [
+                    p[1] | {
+                        VALUE: p[3]
+                    }
+                ]
+        else:
+            # pointer_declarator ASSIGN pointer_initializer COMMA variable_list
+            p[0] = [
+                p[1] | {
+                    VALUE: p[3]
+                }
+            ] + p[5]
+
+def p_variable_assignment(p):
+    """variable_assignment : variable_list SEMICOLON"""
 
     p[0] = []
-    for index, var_info in enumerate(p[2]):
-        # print(f"\tvar {index}: {var_info}")
+    for index, var_info in enumerate(p[1]):
         if type(var_info) == str:
             name = var_info
             value = None
@@ -152,60 +239,56 @@ def p_variable_declaration(p):
             print(f"Unknown format for {var_info}")
             exit(1)
         p[0].append({
-            INSTRUCTION: VARIABLE_DECLARATION,
+            INSTRUCTION: VARIABLE_ASSIGNMENT,
             NAME: name,
-            TYPE: p[1],
+            TYPE: None,
             VALUE: value
         })
 
-def p_declare_variables(p):
-    """declare_variables : ID
-                         | ID ASSIGN expr
-                         | ID COMMA declare_variables
-                         | ID ASSIGN expr COMMA declare_variables"""
+def p_pointer_declarator(p):
+    """pointer_declarator : POINTER ID
+                          | ID array_size"""
 
-    if len(p) == 2:
-        # ID
-        p[0] = [{
-            NAME: p[1],
-            VALUE: None
-        }]
-    elif len(p) == 4:
-        if p[2] == ',':
-            # ID COMMA variables
-            p[0] = [{
-                NAME: p[1],
-                VALUE: None
-            }] + p[3]
-        else:
-            # ID ASSIGN assignable
-            if type(p[3]) == str:
-                value = {
-                    INSTRUCTION: VAR_LOOKUP,
-                    NAME: p[3],
-                }
-            else:
-                value = p[3]
-            p[0] = [{
-                NAME: p[1],
-                VALUE: value
-            }]
+    p[0] = {
+        NAME: p[2] if p[1] == '*' else p[1],
+        SIZE: None if p[1] == '*' else p[2]
+    }
+
+def p_pointer_initializer(p):
+    """pointer_initializer : L_CURLY expr_list R_CURLY
+                           | expr"""
+    
+    p[0] = p[2] if len(p) == 4 else p[1]
+
+def p_array_size(p):
+    """array_size : L_SQUARE expr R_SQUARE
+                  | L_SQUARE R_SQUARE"""
+
+    p[0] = p[2] if len(p) == 4 else None
+
+def p_expr_list(p):
+    """expr_list : expr expr_list_prime"""
+    if p[2]:
+        p[0] = [p[1]] + p[2]
     else:
-        # ID ASSIGN assignable COMMA declare_variables
-        p[0] = [{
-            NAME: p[1],
-            VALUE: p[3]
-        }] + p[5]
+        p[0] = [p[1]]
+
+def p_expr_list_prime(p):
+    """expr_list_prime : COMMA expr expr_list_prime
+                       | empty"""
+
+    if p[1]:
+        if p[3]:
+            p[0] = [p[2]] + p[3]
+        else:
+            p[0]= [p[2]]
 
 
 def p_expr(p):
     """expr : term expr_prime"""
 
     if p[2] is not None:
-        if p[2][INSTRUCTION] in [ADD, SUBTRACT]:
-            p[2][VALUE][L] = p[1]
-        else:
-            raise Exception("Not processed yet")
+        p[2][VALUE][L] = p[1]
         p[0] = p[2]
     else:
         p[0] = p[1]
@@ -214,29 +297,27 @@ def p_expr_prime(p):
     """expr_prime : PLUS term expr_prime
                   | MINUS term expr_prime
                   | empty"""
+    
     if len(p) == 4:
+        rnode = p[2]
         if p[3] is not None:
             p[3][VALUE][L] = p[2]
-            p[0] = p[3]
-        else:
-            p[0] = {
-                INSTRUCTION: ADD if p[1] == '+' else SUBTRACT,
-                VALUE: {
-                    L: None,
-                    R: p[2]
-                }
-            }   
+            rnode = p[3]
+        p[0] = {
+            INSTRUCTION: ADD if p[1] == '+' else SUBTRACT,
+            VALUE: {
+                L: None,
+                R: rnode
+            }
+        }
     else:
-        pass
+        p[0] = None
 
 def p_term(p):
     """term : factor term_prime"""
 
     if p[2] is not None:
-        if p[2][INSTRUCTION] in [MULTIPLY, DIVIDE]:
-            p[2][VALUE][L] = p[1]
-        else:
-            raise Exception("Not processed yet")
+        p[2][VALUE][L] = p[1]
         p[0] = p[2]
     else:
         p[0] = p[1]
@@ -247,19 +328,19 @@ def p_term_prime(p):
                   | empty"""
 
     if len(p) == 4:
+        rnode = p[2]
         if p[3] is not None:
             p[3][VALUE][L] = p[2]
-            p[0] = p[3]
-        else:
-            p[0] = {
-                INSTRUCTION: MULTIPLY if p[1] == '*' else DIVIDE,
-                VALUE: {
-                    L: None,
-                    R: p[2]
-                }
-            }      
+            rnode = p[3]
+        p[0] = {
+            INSTRUCTION: MULTIPLY if p[1] == '*' else DIVIDE,
+            VALUE: {
+                L: None,
+                R: rnode
+            }
+        }      
     else:
-        pass
+        p[0] = None
 
 def p_factor(p):
     """factor : ID
@@ -314,7 +395,7 @@ def p_function_call(p):
     """function_call : ID L_ROUND arguments R_ROUND"""
 
     p[0] = {
-        INSTRUCTION: 'function_call',
+        INSTRUCTION: FUNCTION_CALL,
         NAME: p[1],
         ARGUMENTS: p[3] if p[3] else None
     }
@@ -325,19 +406,21 @@ def p_arguments(p):
                  | empty"""
     if len(p) == 2:
         if p[1] is None:
-            # No args
             p[0] = []
         else:
-            # 1 arg
             p[0] = [p[1]]
     else:
-        # Multiple args
         p[0] = [p[1]] + p[3]
 
 def p_argument(p):
     """argument : ID
+                | ID L_SQUARE expr R_SQUARE
                 | function_call"""
     p[0] = p[1]
+    p[0] = {
+        NAME: p[1],
+        INDEX: p[3] if len(p) == 5 else None
+    }
 
 
 # Rules to handle functions
@@ -365,7 +448,17 @@ def p_function_definition(p):
                 VALUE: None
             }
 
+    p[0] = {
+        INSTRUCTION: FUNCTION_DEFINITION,
+        NAME: p[1][NAME],
+        TYPE: p[1][TYPE],
+        PARAMETERS: p[1][PARAMETERS],
+        BODY: p[3]
+    }
+
     # Check to see if return value type matches function type
+    # Maybe remove this part (type checking should occur separately to parsing)
+    return
     print(f"Parsing statements in {p[1][NAME]}")
     for index, statement in enumerate(p[3]):
         print(f"\tS{index}: {statement}")
@@ -416,49 +509,69 @@ def p_parameters(p):
     # arguments but without the function_call
     if len(p) == 2:
         if p[1] is None:
-            # No params
             p[0] = None
         else:
-            # 1 param
             p[0] = [p[1]]
     else:
-        # 2 or more params
         p[0] = [p[1]] + p[3]
 
 def p_parameter(p):
     """parameter : type ID
-                 | type"""
+                 | type
+                 | type POINTER ID
+                 | type POINTER"""
+    # TODO: split rules for function definition and declaration because declaration doesn're require parameter names
+    if len(p) == 2:
+        name = None
+        pointer = False
+    elif len(p) == 3:
+        if p[2] == '*':
+            name = None
+            pointer = True
+        else:
+            name = p[2]
+            pointer = False
+    else:
+        name = p[3]
+        pointer = True
+
     p[0] = {
         TYPE: p[1],
-        NAME: p[2] if len(p) == 3 else None
+        NAME: name,
+        POINTER: pointer
     }
 
+def p_printf(p):
+    """printf : PRINTF L_ROUND DOUBLE_QUOTE printf_string DOUBLE_QUOTE printf_args R_ROUND SEMICOLON"""
+
+def p_printf_strinf(p):
+    """printf_string : STRING
+                     | string_format
+                     | STRING printf_string_prime
+                     | string_format printf_string_prime
+                     | empty"""
+
+def p_printf_string_prime(p):
+    """printf_string_prime : STRING printf_string
+                           | string_format printf_string"""
+
+def p_string_format(p):
+    """string_format : SIGNED_DEC_INT
+                     | LOWER_DEC_FLOAT"""
+
+def p_printf_args(p):
+    """printf_args : COMMA arguments
+                   | empty"""
+
+
 def p_return(p):
-    """return : RETURN function_call SEMICOLON
-              | RETURN ID SEMICOLON
-              | RETURN literal SEMICOLON
+    """return : RETURN expr SEMICOLON
               | RETURN SEMICOLON"""
-    # Replace with assignable
-    
-    if len(p) == 4:
-        if type(p[2]) == str:
-            # RETURN ID SEMICOLON
-            t = 'id'
-        elif type(p[2]) == dict:
-            # RETURN function_call SEMICOLON
-            # RETURN literal SEMICOLON
-            t = p[2][TYPE] if TYPE in p[2] else None
-        p[0] = {
-            'instruction': 'return',
-            TYPE: t,
-            VALUE: p[2]
-        }
-    else:
-        p[0] = {
-            'instruction': 'return',
-            TYPE: 'void',
-            VALUE: None
-        }
+
+    p[0] = {
+        INSTRUCTION: RETURN,
+        VALUE: p[2] if len(p) == 4 else None
+    }
 
 def p_type(p):
     """type : TYPE_VOID
@@ -466,17 +579,6 @@ def p_type(p):
             | TYPE_FLOAT
             | TYPE_CHAR"""
     p[0] = p[1]
-
-
-
-
-
-
-
-
-
-
-
 
 
 def p_empty(p):

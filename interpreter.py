@@ -16,6 +16,7 @@ class Interpreter:
             self.filedata = f.read()
         self.lexer = None
         self.parser = None
+        self.state = state # from parser.py
 
     def tokenize(self, debug=False):
         self.lexer: lex.Lexer = lex.lex(
@@ -59,12 +60,31 @@ class Interpreter:
                 break
             print(f"{token.type} {token.value} {token.lineno}")
 
+    def print_memory(self, file: str = None):
+        """Prints state of internal memory when called"""
+        if not file:
+            for index, byte in enumerate(self.state.memory):
+                if (index % 8 == 0) and (index):
+                    print("\t", end="")
+                if (index % 16 == 0) and (index):
+                    print("")
+                print(byte, end=" ")
+        else:
+            with open(file, 'w') as f:
+                for index, byte in enumerate(self.state.memory):
+                    if (index % 8 == 0) and (index):
+                        f.write("\t")
+                    if (index % 16 == 0) and (index):
+                        f.write("\n")
+                    f.write(f"{byte} ")
+
 
 
 def main(fpath: str) -> None:
     interpreter = Interpreter(fpath)
     interpreter.tokenize()
     interpreter.print_tokens()
+    interpreter.print_memory(file="mem.txt")
     interpreter.generate_ast(debug=True)
     interpreter.generate_flow_graph()
     # interpreter.interpret()

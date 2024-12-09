@@ -57,7 +57,7 @@ return_types = {
 }
 
 reserved_functions = {
-    'print': 'PRINT'
+    'printf': 'PRINTF'
 }
 
 reserved = {
@@ -188,6 +188,17 @@ def t_SEMICOLON(t):
         t.type = 'COMMENT'
     elif read_string:
         t.type = 'STRING'
+    return _typecheck(t)
+
+def t_FORMAT(t):
+    r'\%[0 #+-]?[0-9*]*\.?\d*[hl]{0,2}[jztL]?[diuoxXeEfgGaAcpsSn%]'
+    if read_comment:
+        t.type = 'COMMENT'
+    elif t.value in string_formatter:
+        t.type = string_formatter[t.value]
+    else:
+        print(f"String formatter {t.value} not supported.")
+        exit(1)
     return _typecheck(t)
 
 def t_comparison_operators(t):
@@ -412,19 +423,6 @@ def t_SINGLE_QUOTE(t):
 # def t_STRING(t):
 #     r'\"(\\.|[^"\\])*\"'
 #     return t
-
-
-def t_FORMAT(t):
-    r'\%[0 #+-]?[0-9*]*\.?\d*[hl]{0,2}[jztL]?[diuoxXeEfgGaAcpsSn%]'
-    # TODO: Create dictionary for all format specifiers
-    if read_comment:
-        t.type = 'COMMENT'
-    elif t.value in string_formatter:
-        t.type = string_formatter[t.value]
-    else:
-        print(f"String formatter {t.value} not supported.")
-        exit(1)
-    return _typecheck(t)
 
 def t_newline(t):
     r'\n+'

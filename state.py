@@ -2,11 +2,45 @@
 
 from collections import deque
 
+class Statement:
+    def __init__(self, body_,):
+        self.body = body_
+
+class Variable:
+    def __init__(self, type_, name_, value_, negative_):
+        self.type = type_
+        self.name = name_
+        self.value = value_
+        self.address = None
+        self.negative = negative_
+
+    def __eq__(self, value: "Variable"):
+        return self.name == value.name
+
+    def __hash__(self):
+        return hash(self.name)
+    
+class Literal:
+    def __init__(self, type_, value_, negative_):
+        self.type = type_
+        self.value = value_
+        self.negative = negative_
+
+class Function:
+    def __init__(self, type_, parameters_, body_):
+        self.type = type_
+        self.parameters = parameters_
+        self.body = body_
+
 class State:
-    def __init__(self):
+    def __init__(self, memsize_: int):
         # Stores the name and return type of current function being parsed
         self.current_function = None
         self.local_variables = {}
+
+        # Memory
+        self.memory_size = memsize_
+        self.memory = [0 for i in range(memsize_)]
         
         # Keeps track of order in which function calls were made
         self.call_stack = deque()
@@ -31,4 +65,4 @@ class State:
         elif name in self.global_variables:
             return self.global_variables[name]
 
-state = State()
+state = State(memsize_=1_000_000)
