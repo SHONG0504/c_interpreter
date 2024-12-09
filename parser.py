@@ -45,6 +45,8 @@ VAR_LOOKUP:
 """
 
 precedence = (
+    ('left', 'LT', 'GT', 'LEQ', 'GEQ'),
+    ('left', 'EQ', 'NE'),
     ('left', 'PLUS', 'MINUS'),
     ('left', 'MULTIPLY', 'DIVIDE'),
     ('right', 'NEGATIVE')
@@ -109,16 +111,17 @@ def p_global_statements(p):
     
 
 def p_global_statement(p):
-    """global_statement : variable_declaration
+    """global_statement : variable_declaration SEMICOLON
                         | variable_list SEMICOLON
-                        | function_declaration
+                        | function_declaration SEMICOLON
                         | function_definition"""
     
+    # Represents variables that were assigned to (thus not having a type statement as it was declared earlier)
     s = [{
         INSTRUCTION: VARIABLE_ASSIGNMENT if statement[VALUE] else NOTHING,
         NAME: statement[NAME],
         VALUE: statement[VALUE]
-    } for statement in p[1]] if len(p) == 3 else None
+    } for statement in p[1] if not statement[TYPE]]
 
     p[0] = p[1] if not s else s
 
@@ -135,16 +138,17 @@ def p_function_statements(p):
             p[0] = [p[1]] + p[2]
 
 def p_function_statement(p):
-    """function_statement : variable_declaration
-                          | variable_assignment
+    """function_statement : variable_declaration SEMICOLON
+                          | variable_assignment SEMICOLON
                           | function_call SEMICOLON
-                          | printf
-                          | return"""
+                          | printf SEMICOLON
+                          | for_loop
+                          | return SEMICOLON"""
     p[0] = p[1]
 
 
 def p_variable_declaration(p):
-    """variable_declaration : type variable_list SEMICOLON"""
+    """variable_declaration : type variable_list"""
 
     p[0] = [
         var_info | {
@@ -152,7 +156,6 @@ def p_variable_declaration(p):
             TYPE: p[1]
         } for var_info in p[2]
     ]
-    print(p[0])
 
 def p_variable_list(p):
     """variable_list : ID
@@ -225,7 +228,7 @@ def p_variable_list(p):
             ] + p[5]
 
 def p_variable_assignment(p):
-    """variable_assignment : variable_list SEMICOLON"""
+    """variable_assignment : variable_list"""
 
     p[0] = []
     for index, var_info in enumerate(p[1]):
@@ -285,7 +288,7 @@ def p_expr_list_prime(p):
 
 
 def p_expr(p):
-    """expr : term expr_prime"""
+    """expr : comp expr_prime"""
 
     if p[2] is not None:
         p[2][VALUE][L] = p[1]
@@ -294,11 +297,50 @@ def p_expr(p):
         p[0] = p[1]
 
 def p_expr_prime(p):
-    """expr_prime : PLUS term expr_prime
-                  | MINUS term expr_prime
+    """expr_prime : LT comp expr_prime
+                  | GT comp expr_prime
+                  | LEQ comp expr_prime
+                  | GEQ comp expr_prime
+                  | EQ comp expr_prime
+                  | NE comp expr_prime
                   | empty"""
     
-    if len(p) == 4:
+    if len(p) == 3:
+        rnode = p[2]
+        p[0] = p[1]
+    elif len(p) == 4:
+        rnode = p[2]
+        if p[3] is not None:
+            p[3][VALUE][L] = p[2]
+            rnode = p[3]
+        p[0] = {
+            INSTRUCTION: p[1],
+            VALUE: {
+                L: None,
+                R: rnode
+            }
+        }
+    else:
+        p[0] = None
+
+def p_comp(p):
+    """comp : term comp_prime"""
+
+    if p[2] is not None:
+        p[2][VALUE][L] = p[1]
+        p[0] = p[2]
+    else:
+        p[0] = p[1]
+
+def p_comp_prime(p):
+    """comp_prime : PLUS term comp_prime
+                  | MINUS term comp_prime
+                  | empty"""
+    
+    if len(p) == 3:
+        rnode = p[2]
+        p[0] = p[1]
+    elif len(p) == 4:
         rnode = p[2]
         if p[3] is not None:
             p[3][VALUE][L] = p[2]
@@ -397,7 +439,7 @@ def p_function_call(p):
     p[0] = {
         INSTRUCTION: FUNCTION_CALL,
         NAME: p[1],
-        ARGUMENTS: p[3] if p[3] else None
+        ARGUMENTS: p[3]
     }
 
 def p_arguments(p):
@@ -426,7 +468,7 @@ def p_argument(p):
 # Rules to handle functions
 
 def p_function_declaration(p):
-    """function_declaration : function_prototype SEMICOLON"""
+    """function_declaration : function_prototype"""
 
     p[0] = {
         INSTRUCTION: FUNCTION_DECLARATION,
@@ -499,7 +541,7 @@ def p_function_prototype(p):
     p[0] = {
         TYPE: p[1],
         NAME: p[2],
-        'parameters': p[4] if p[4] else None
+        PARAMETERS: p[4]
     }
 
 def p_parameters(p):
@@ -542,9 +584,10 @@ def p_parameter(p):
     }
 
 def p_printf(p):
-    """printf : PRINTF L_ROUND DOUBLE_QUOTE printf_string DOUBLE_QUOTE printf_args R_ROUND SEMICOLON"""
+    """printf : PRINTF L_ROUND DOUBLE_QUOTE printf_string DOUBLE_QUOTE printf_args R_ROUND"""
+    print(f"Print: {p[4]}")
 
-def p_printf_strinf(p):
+def p_printf_string(p):
     """printf_string : STRING
                      | string_format
                      | STRING printf_string_prime
@@ -563,14 +606,39 @@ def p_printf_args(p):
     """printf_args : COMMA arguments
                    | empty"""
 
+def p_for_loop(p):
+    """for_loop : FOR L_ROUND for_init SEMICOLON"""
+    # """for_loop : FOR L_ROUND for_init SEMICOLON for_cond SEMICOLON for_update R_ROUND"""
+
+def p_for_init(p):
+    """for_init : for_init_statement for_init_prime
+                | empty"""
+    
+def p_for_init_prime(p):
+    """for_init_prime : COMMA for_init_statement for_init_prime
+                      | empty"""
+
+def p_for_init_statement(p):
+    """for_init_statement : variable_declaration
+                          | variable_assignment
+                          | function_call
+                          | printf"""
+
+# def p_for_cond(p):
+#     """for_cond : ID"""
+
+# def p_for_update(p):
+#     """for_update : ID"""
+
+
 
 def p_return(p):
-    """return : RETURN expr SEMICOLON
-              | RETURN SEMICOLON"""
+    """return : RETURN expr
+              | RETURN"""
 
     p[0] = {
         INSTRUCTION: RETURN,
-        VALUE: p[2] if len(p) == 4 else None
+        VALUE: p[2] if len(p) == 3 else None
     }
 
 def p_type(p):

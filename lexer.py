@@ -69,12 +69,12 @@ reserved = {
 }
 
 comparison_operators = {
-    '==': 'EQUALITY',
+    '==': 'EQ',
     '<': 'LT',
     '>': 'GT',
     '<=': 'LEQ',
     '>=': 'GEQ',
-    '!=': 'INEQUALITY'
+    '!=': 'NE'
 }
 
 logical_operators = {
