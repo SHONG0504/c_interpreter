@@ -1,9 +1,8 @@
 from state import *
 
-# TODO: Add type checking to every production
-# TODO: Ensure that function calls fail if called before function is declared/defined
 # TODO: Add const variables
-# TODO: Rename variable_list to avoid confusion with variable_declaration
+# TODO: Differentiate between prefix and postfix increment/decrement
+# TODO: Consistent handling for unary increment/decrement operators
 
 # AST Dict Keys
 INSTRUCTION = 'instruction'
@@ -20,6 +19,7 @@ NEGATIVE = 'negative' # Indicates that evaluation result needs to be multiplied 
 
 # Types of instructions
 NOTHING = 'nothing'
+PRINT = 'print'
 RETURN = 'return'
 VAR_LOOKUP = 'var_lookup'
 FUNCTION_DECLARATION = 'function_declaration'
@@ -33,6 +33,13 @@ DIVIDE = 'divide'
 ADD = 'add'
 SUBTRACT = 'subtract'
 
+FOR_LOOP = 'for_loop'
+INIT = 'init'
+COND = 'cond'
+UPDATE = 'update'
+
+IF = 'if_statement'
+
 L = 'left'
 R = 'right'
 
@@ -44,12 +51,15 @@ VAR_LOOKUP:
     }
 """
 
+# https://en.cppreference.com/w/c/language/operator_precedence
 precedence = (
+    # TODO: prefix vs postfix increment
     ('left', 'LT', 'GT', 'LEQ', 'GEQ'),
     ('left', 'EQ', 'NE'),
     ('left', 'PLUS', 'MINUS'),
     ('left', 'MULTIPLY', 'DIVIDE'),
-    ('right', 'NEGATIVE')
+    ('right', 'NEGATIVE'),
+    ('left', 'INCREMENT', 'DECREMENT')
 )
 
 def p_program(p):
@@ -121,7 +131,7 @@ def p_global_statement(p):
         INSTRUCTION: VARIABLE_ASSIGNMENT if statement[VALUE] else NOTHING,
         NAME: statement[NAME],
         VALUE: statement[VALUE]
-    } for statement in p[1] if not statement[TYPE]]
+    } for statement in (p[1] if type(p[1]) == list else [p[1]]) if not statement[TYPE]]
 
     p[0] = p[1] if not s else s
 
@@ -143,6 +153,7 @@ def p_function_statement(p):
                           | function_call SEMICOLON
                           | printf SEMICOLON
                           | for_loop
+                          | if_statement
                           | return SEMICOLON"""
     p[0] = p[1]
 
@@ -165,12 +176,26 @@ def p_variable_list(p):
                      | pointer_declarator
                      | pointer_declarator ASSIGN pointer_initializer
                      | pointer_declarator COMMA variable_list
-                     | pointer_declarator ASSIGN pointer_initializer COMMA variable_list"""
+                     | pointer_declarator ASSIGN pointer_initializer COMMA variable_list
+                     | ID INCREMENT
+                     | ID DECREMENT
+                     | ID INCREMENT COMMA variable_list
+                     | ID DECREMENT COMMA variable_list
+                     | pointer_declarator INCREMENT
+                     | pointer_declarator DECREMENT
+                     | pointer_declarator INCREMENT COMMA variable_list
+                     | pointer_declarator DECREMENT COMMA variable_list"""
     # Line 4n: declare
     # Line 4n+1: assign
     # Line 4n+2: declare, variable_list
     # Line 4n+3: assign, variable_list
     # TODO: possible simplification for ID and pointer_declarator
+    # TODO: Add cases to handle rules:
+        # pointer_declarator INCREMENT
+        # pointer_declarator DECREMENT
+        # pointer_declarator INCREMENT COMMA variable_list
+        # pointer_declarator DECREMENT COMMA variable_list
+
 
     if type(p[1]) == str:
         # Non pointer
@@ -179,6 +204,19 @@ def p_variable_list(p):
             p[0] = [{
                 NAME: p[1],
                 VALUE: None
+            }]
+        elif len(p) == 3:
+            # ID INCREMENT
+            # ID DECREMENT
+            p[0] = [{
+                NAME: p[1],
+                VALUE: {
+                    INSTRUCTION: ADD if p[2] == '++' else SUBTRACT,
+                    VALUE: {
+                        L: {NAME: p[1]},
+                        R: {TYPE: 'int', VALUE: 1}
+                    }
+                }
             }]
         elif len(p) == 4:
             if p[2] == ',':
@@ -193,6 +231,19 @@ def p_variable_list(p):
                     NAME: p[1],
                     VALUE: p[3]
                 }]
+        elif len(p) == 5:
+            # ID INCREMENT COMMA variable_list
+            # ID DECREMENT COMMA variable_list
+            p[0] = [{
+                NAME: p[1],
+                VALUE: {
+                    INSTRUCTION: ADD if p[2] == '++' else SUBTRACT,
+                    VALUE: {
+                        L: {NAME: p[1]},
+                        R: {TYPE: 'int', VALUE: 1}
+                    }
+                }
+            }] + p[4]
         else:
             # ID ASSIGN expr COMMA variable_list
             p[0] = [{
@@ -386,11 +437,14 @@ def p_term_prime(p):
 
 def p_factor(p):
     """factor : ID
+              | ID INCREMENT
+              | ID DECREMENT
+              | ID L_SQUARE expr R_SQUARE
               | literal
               | function_call
               | L_ROUND expr R_ROUND
               | NEGATIVE factor"""
-    
+
     if p[1] == '-':
         # NEGATIVE factor
         p[2][NEGATIVE] = True
@@ -400,17 +454,27 @@ def p_factor(p):
             # L_ROUND expr R_ROUND
             p[0] = p[2]
         elif type(p[1]) == str:
-            # ID
-            p[0] = {
-                NAME: p[1]
-            }
+            if len(p) == 2:
+                # ID
+                p[0] = {
+                    NAME: p[1]
+                }
+            elif len(p) == 3:
+                if p[2] == '++':
+                    pass
+                elif p[2] == '--':
+                    pass
+            else:
+                # ID L_SQUARE expr R_SQUARE
+                p[0] = {
+                    NAME: p[1],
+                    INDEX: p[3]
+                }
         else:
             # literal
             # function_call
             p[0] = p[1]
         p[0][NEGATIVE] = False
-
-
 
     
 
@@ -443,8 +507,8 @@ def p_function_call(p):
     }
 
 def p_arguments(p):
-    """arguments : argument
-                 | argument COMMA arguments
+    """arguments : expr
+                 | expr COMMA arguments
                  | empty"""
     if len(p) == 2:
         if p[1] is None:
@@ -454,15 +518,6 @@ def p_arguments(p):
     else:
         p[0] = [p[1]] + p[3]
 
-def p_argument(p):
-    """argument : ID
-                | ID L_SQUARE expr R_SQUARE
-                | function_call"""
-    p[0] = p[1]
-    p[0] = {
-        NAME: p[1],
-        INDEX: p[3] if len(p) == 5 else None
-    }
 
 
 # Rules to handle functions
@@ -585,7 +640,24 @@ def p_parameter(p):
 
 def p_printf(p):
     """printf : PRINTF L_ROUND DOUBLE_QUOTE printf_string DOUBLE_QUOTE printf_args R_ROUND"""
-    print(f"Print: {p[4]}")
+    str_stack = ""
+    new_printf_string = []
+    for token in p[4]:
+        if type(token) == str:
+            str_stack += token
+        else:
+            if len(str_stack) > 0:
+                new_printf_string.append(str_stack)
+                str_stack = ""
+            new_printf_string.append(token)
+    if len(str_stack) > 0:
+        new_printf_string.append(str_stack)
+
+    p[0] = {
+        INSTRUCTION: PRINT,
+        VALUE: new_printf_string,
+        ARGUMENTS: p[6]
+    }
 
 def p_printf_string(p):
     """printf_string : STRING
@@ -593,43 +665,89 @@ def p_printf_string(p):
                      | STRING printf_string_prime
                      | string_format printf_string_prime
                      | empty"""
+    if p[1] is None:
+        p[0] = []
+    else:
+        if len(p) == 3:
+            if p[2] is not None:
+                p[0] = [p[1]] + p[2]
+            else:
+                p[0] = [p[1]]
+        else:
+            p[0] = [p[1]]
 
 def p_printf_string_prime(p):
     """printf_string_prime : STRING printf_string
                            | string_format printf_string"""
+    if p[2] is not None:
+        p[0] = [p[1]] + p[2]
+    else:
+        p[0] = [p[1]]
 
 def p_string_format(p):
     """string_format : SIGNED_DEC_INT
                      | LOWER_DEC_FLOAT"""
+    p[0] = {
+        TYPE: p[1]
+    }
 
 def p_printf_args(p):
     """printf_args : COMMA arguments
                    | empty"""
+    if len(p) == 3:
+        p[0] = p[2]
 
 def p_for_loop(p):
-    """for_loop : FOR L_ROUND for_init SEMICOLON"""
-    # """for_loop : FOR L_ROUND for_init SEMICOLON for_cond SEMICOLON for_update R_ROUND"""
+    """for_loop : FOR L_ROUND for_init SEMICOLON for_cond SEMICOLON for_update R_ROUND L_CURLY function_statements R_CURLY"""
+    p[0] = {
+        INSTRUCTION: FOR_LOOP,
+        INIT: p[3],
+        COND: p[5],
+        UPDATE: p[7],
+        BODY: p[10]
+    }
 
 def p_for_init(p):
     """for_init : for_init_statement for_init_prime
                 | empty"""
+    if p[2] is not None:
+        p[0] = [p[1]] + p[2]
+    else:
+        p[0] = [p[1]]
     
 def p_for_init_prime(p):
     """for_init_prime : COMMA for_init_statement for_init_prime
                       | empty"""
+    if p[1] is not None:
+        if p[3] is not None:
+            p[0] = [p[2]] + p[3]
+        else:
+            p[0] = [p[2]]
+    else:
+        p[0] = None
 
 def p_for_init_statement(p):
     """for_init_statement : variable_declaration
                           | variable_assignment
                           | function_call
                           | printf"""
+    p[0] = p[1]
 
-# def p_for_cond(p):
-#     """for_cond : ID"""
+def p_for_cond(p):
+    """for_cond : expr"""
+    p[0] = p[1]
 
-# def p_for_update(p):
-#     """for_update : ID"""
+def p_for_update(p):
+    """for_update : variable_list"""
+    p[0] = p[1]
 
+def p_if_statement(p):
+    """if_statement : IF L_ROUND expr R_ROUND L_CURLY function_statements R_CURLY"""
+    p[0] = {
+        INSTRUCTION: IF,
+        COND: p[3],
+        BODY: p[6]
+    }
 
 
 def p_return(p):

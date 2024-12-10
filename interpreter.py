@@ -83,7 +83,7 @@ class Interpreter:
 def main(fpath: str) -> None:
     interpreter = Interpreter(fpath)
     interpreter.tokenize()
-    interpreter.print_tokens()
+    # interpreter.print_tokens()
     interpreter.print_memory(file="mem.txt")
     interpreter.generate_ast(debug=True)
     interpreter.generate_flow_graph()
