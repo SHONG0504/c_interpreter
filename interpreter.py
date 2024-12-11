@@ -208,6 +208,10 @@ class Interpreter:
                 if statement[VALUE][INDEX] is not None:
                     return s[statement[VALUE][NAME]][VALUE][self.evaluate_ast(statement[VALUE][INDEX], scope)[VALUE]]
                 return s[statement[VALUE][NAME]][VALUE]
+        if statement[VALUE][NAME] in self.state.global_variables:
+            if statement[VALUE][INDEX] is not None:
+                return self.state.global_variables[statement[VALUE][NAME]][VALUE][self.evaluate_ast(statement[VALUE][INDEX], scope)[VALUE]]
+            return self.state.global_variables[statement[VALUE][NAME]][VALUE]
         else:
             err = f"{statement[VALUE][NAME]} assigned before declaration."
             raise Exception(err)
