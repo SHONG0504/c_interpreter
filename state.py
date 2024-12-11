@@ -7,18 +7,20 @@ class Statement:
         self.body = body_
 
 class Variable:
-    def __init__(self, type_, name_, value_, negative_):
+    def __init__(self, type_, name_, value_: dict):
         self.type = type_
         self.name = name_
         self.value = value_
         self.address = None
-        self.negative = negative_
 
     def __eq__(self, value: "Variable"):
         return self.name == value.name
 
     def __hash__(self):
-        return hash(self.name)
+        return hash(self.address)
+    
+    def __str__(self):
+        return f"({self.type}, {self.name}, {self.value}, {self.address})"
     
 class Literal:
     def __init__(self, type_, value_, negative_):

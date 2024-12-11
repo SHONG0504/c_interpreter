@@ -75,11 +75,14 @@ def p_program(p):
         p = statement[PARAMETERS] if PARAMETERS in statement else None
         b = statement[BODY] if BODY in statement else None
         i = statement[INSTRUCTION]
+        size = statement[SIZE] if SIZE in statement else None
 
         if i == VARIABLE_DECLARATION:
             state.global_variables[f] = {
                 TYPE: t,
-                VALUE: v
+                VALUE: v,
+                SIZE: size,
+                POINTER: statement[POINTER]
             }
         elif i == VARIABLE_ASSIGNMENT:
             if f not in state.global_variables:
@@ -127,13 +130,14 @@ def p_global_statement(p):
                         | function_definition"""
     
     # Represents variables that were assigned to (thus not having a type statement as it was declared earlier)
-    s = [{
-        INSTRUCTION: VARIABLE_ASSIGNMENT if statement[VALUE] else NOTHING,
-        NAME: statement[NAME],
-        VALUE: statement[VALUE]
-    } for statement in (p[1] if type(p[1]) == list else [p[1]]) if not statement[TYPE]]
+    # s = [{
+    #     INSTRUCTION: VARIABLE_ASSIGNMENT if statement[VALUE] else NOTHING,
+    #     NAME: statement[NAME],
+    #     VALUE: statement[VALUE]
+    # } for statement in (p[1] if type(p[1]) == list else [p[1]]) if not statement[TYPE]]
 
-    p[0] = p[1] if not s else s
+    # p[0] = p[1] if not s else s
+    p[0] = p[1]
 
 # Statements that occur inside functions
 def p_function_statements(p):
@@ -161,12 +165,18 @@ def p_function_statement(p):
 def p_variable_declaration(p):
     """variable_declaration : type variable_list"""
 
-    p[0] = [
-        var_info | {
+    if type(p[2]) == list:
+        p[0] = [
+            var_info | {
+                INSTRUCTION: VARIABLE_DECLARATION,
+                TYPE: p[1]
+            } for var_info in p[2]
+        ]
+    else:
+        p[0] = [p[2] | {
             INSTRUCTION: VARIABLE_DECLARATION,
-            TYPE: p[1]
-        } for var_info in p[2]
-    ]
+        TYPE: p[1]
+        }]
 
 def p_variable_list(p):
     """variable_list : ID
@@ -203,101 +213,117 @@ def p_variable_list(p):
             # ID
             p[0] = [{
                 NAME: p[1],
-                VALUE: None
+                VALUE: None,
+                POINTER: False
             }]
         elif len(p) == 3:
             # ID INCREMENT
             # ID DECREMENT
             p[0] = [{
+                INSTRUCTION: VARIABLE_ASSIGNMENT,
                 NAME: p[1],
                 VALUE: {
                     INSTRUCTION: ADD if p[2] == '++' else SUBTRACT,
                     VALUE: {
-                        L: {NAME: p[1]},
+                        L: {
+                            INSTRUCTION: VAR_LOOKUP,
+                            VALUE: {
+                                NAME: p[1],
+                                INDEX: None
+                            }
+                        },
                         R: {TYPE: 'int', VALUE: 1}
                     }
-                }
+                },
+                POINTER: False
             }]
         elif len(p) == 4:
             if p[2] == ',':
                 # ID COMMA variables
                 p[0] = [{
                     NAME: p[1],
-                    VALUE: None
+                    VALUE: None,
+                    POINTER: False
                 }] + p[3]
             else:
                 # ID ASSIGN expr
                 p[0] = [{
                     NAME: p[1],
-                    VALUE: p[3]
+                    VALUE: p[3],
+                    POINTER: False
                 }]
         elif len(p) == 5:
             # ID INCREMENT COMMA variable_list
             # ID DECREMENT COMMA variable_list
             p[0] = [{
+                INSTRUCTION: VARIABLE_ASSIGNMENT,
                 NAME: p[1],
                 VALUE: {
                     INSTRUCTION: ADD if p[2] == '++' else SUBTRACT,
                     VALUE: {
-                        L: {NAME: p[1]},
-                        R: {TYPE: 'int', VALUE: 1}
+                        VALUE: {
+                            L: {
+                                INSTRUCTION: VAR_LOOKUP,
+                                VALUE: {
+                                    NAME: p[1],
+                                    INDEX: None
+                                }
+                            },
+                            R: {TYPE: 'int', VALUE: 1}
+                        }
                     }
-                }
+                },
+                POINTER: False
             }] + p[4]
         else:
             # ID ASSIGN expr COMMA variable_list
             p[0] = [{
                 NAME: p[1],
-                VALUE: p[3]
+                VALUE: p[3],
+                POINTER: False
             }] + p[5]
     else:
         # Pointer
         if len(p) == 2:
             # pointer_declarator
-            p[0] = p[1] | {VALUE: None}
+            p[0] = p[1] | {
+                VALUE: None,
+                POINTER: True
+            }
         elif len(p) == 4:
             if p[2] == ',':
                 # pointer_declarator COMMA variable_list
                 p[0] = [
                     p[1] | {
-                        VALUE: None
+                        VALUE: None,
+                        POINTER: True
                     }
                 ] + p[3]
             else:
                 # pointer_declarator ASSIGN pointer_initializer
                 p[0] = [
                     p[1] | {
-                        VALUE: p[3]
+                        VALUE: p[3],
+                        POINTER: True
                     }
                 ]
         else:
             # pointer_declarator ASSIGN pointer_initializer COMMA variable_list
             p[0] = [
                 p[1] | {
-                    VALUE: p[3]
+                    VALUE: p[3],
+                    POINTER: True
                 }
             ] + p[5]
 
 def p_variable_assignment(p):
     """variable_assignment : variable_list"""
 
-    p[0] = []
-    for index, var_info in enumerate(p[1]):
-        if type(var_info) == str:
-            name = var_info
-            value = None
-        elif type(var_info) == dict:
-            name = var_info[NAME]
-            value = var_info[VALUE]
-        else:
-            print(f"Unknown format for {var_info}")
-            exit(1)
-        p[0].append({
-            INSTRUCTION: VARIABLE_ASSIGNMENT,
-            NAME: name,
-            TYPE: None,
-            VALUE: value
-        })
+    # for index, var_info in enumerate(p[1]):
+    p[0] = [var_info | {
+        INSTRUCTION: VARIABLE_ASSIGNMENT
+    } for var_info in p[1]]
+
 
 def p_pointer_declarator(p):
     """pointer_declarator : POINTER ID
@@ -457,24 +483,49 @@ def p_factor(p):
             if len(p) == 2:
                 # ID
                 p[0] = {
-                    NAME: p[1]
+                    INSTRUCTION: VAR_LOOKUP,
+                    VALUE: {
+                        NAME: p[1],
+                        INDEX: None
+                    }
                 }
             elif len(p) == 3:
-                if p[2] == '++':
-                    pass
-                elif p[2] == '--':
-                    pass
+                # ++, --
+                p[0] = {
+                    INSTRUCTION: VARIABLE_ASSIGNMENT,
+                    NAME: p[1],
+                    POINTER: False,
+                    VALUE: {
+                        INSTRUCTION: ADD if p[2] == '++' else SUBTRACT,
+                        VALUE: {
+                            L: {
+                                INSTRUCTION: VAR_LOOKUP,
+                                VALUE: {
+                                    NAME: p[1],
+                                    INDEX: None
+                                }},
+                            R: {
+                                TYPE: 'int',
+                                VALUE: 1
+                            }
+                        }
+                    }
+                }
             else:
                 # ID L_SQUARE expr R_SQUARE
                 p[0] = {
-                    NAME: p[1],
-                    INDEX: p[3]
+                    INSTRUCTION: VAR_LOOKUP,
+                    VALUE: {
+                        NAME: p[1],
+                        INDEX: p[3]
+                    }
                 }
         else:
             # literal
             # function_call
             p[0] = p[1]
-        p[0][NEGATIVE] = False
+        if NEGATIVE not in p[0]:
+            p[0][NEGATIVE] = False
 
     
 
@@ -502,8 +553,10 @@ def p_function_call(p):
 
     p[0] = {
         INSTRUCTION: FUNCTION_CALL,
-        NAME: p[1],
-        ARGUMENTS: p[3]
+        VALUE: {
+            NAME: p[1],
+            ARGUMENTS: p[3]
+        }
     }
 
 def p_arguments(p):
@@ -534,53 +587,6 @@ def p_function_declaration(p):
 
 def p_function_definition(p):
     """function_definition : function_prototype L_CURLY function_statements R_CURLY"""
-
-    local_variables = {}
-
-    # Store passed arguments as local variables
-    if p[1][PARAMETERS]:
-        for parameter in p[1][PARAMETERS]:
-            local_variables[parameter[NAME]] = {
-                TYPE: parameter[TYPE],
-                VALUE: None
-            }
-
-    p[0] = {
-        INSTRUCTION: FUNCTION_DEFINITION,
-        NAME: p[1][NAME],
-        TYPE: p[1][TYPE],
-        PARAMETERS: p[1][PARAMETERS],
-        BODY: p[3]
-    }
-
-    # Check to see if return value type matches function type
-    # Maybe remove this part (type checking should occur separately to parsing)
-    return
-    print(f"Parsing statements in {p[1][NAME]}")
-    for index, statement in enumerate(p[3]):
-        print(f"\tS{index}: {statement}")
-        continue
-        if statement[INSTRUCTION] == DECLARATION:
-            local_variables[statement[NAME]] = {
-                TYPE: statement[TYPE],
-                VALUE: statement[VALUE]
-            }
-        if statement['instruction'] == 'return':
-            if statement[TYPE] == 'id':
-                # Lookup variable from table (hash map)
-                if statement[VALUE] in local_variables:
-                    statement[TYPE] = local_variables[statement[VALUE]][TYPE]
-                elif statement[VALUE] in state.global_variables:
-                    statement[TYPE] = state.global_variables[statement[VALUE]][TYPE]
-                else:
-                    print(f"Variable {statement[VALUE]} in function {p[1][NAME]} used before declaration.")
-                    exit(1)
-            if statement[TYPE] != p[1][TYPE]:
-                print(f"Return type of function {p[1][NAME]} does not match.")
-                exit(1)
-            else:
-                # print(f"Return type of function {p[1][NAME]} matches.")
-                pass
 
     p[0] = {
         INSTRUCTION: FUNCTION_DEFINITION,
@@ -711,9 +717,9 @@ def p_for_init(p):
     """for_init : for_init_statement for_init_prime
                 | empty"""
     if p[2] is not None:
-        p[0] = [p[1]] + p[2]
+        p[0] = p[1] + p[2]
     else:
-        p[0] = [p[1]]
+        p[0] = p[1]
     
 def p_for_init_prime(p):
     """for_init_prime : COMMA for_init_statement for_init_prime
