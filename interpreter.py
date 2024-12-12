@@ -180,7 +180,8 @@ class Interpreter:
             if cond[VALUE]:
                 # Run body statements if conditions are met
                 for b_statement in statement[BODY]:
-                    self.handle_statement(b_statement, scope)
+                    if r := self.handle_statement(b_statement, scope):
+                        return r
         elif statement[INSTRUCTION] == PRINT:
             self.evaluate_print(statement, scope)
         elif statement[INSTRUCTION] in [
@@ -191,8 +192,12 @@ class Interpreter:
             return self.evaluate_function_call(statement, scope)
         elif statement[INSTRUCTION] == RETURN:
             r_val = self.evaluate_ast(statement[VALUE], scope)
-            print(f"return({r_val[VALUE]})")
-            return r_val
+            if r_val:
+                print(f"return({r_val[VALUE]})")
+                return r_val
+            else:
+                print("return(None)")
+                return "return"
         else:
             err = f"\t{statement[INSTRUCTION]} not ready"
             raise Exception(err)
@@ -311,6 +316,8 @@ class Interpreter:
         # Evaluate statements in function
         for s in self.state.functions[statement[VALUE][NAME]]['body']:
             r_val = self.handle_statement(s, function_scope)
+            if r_val == "return":
+                return
             if s[INSTRUCTION] == RETURN:
                 return r_val
         
@@ -322,15 +329,19 @@ class Interpreter:
                 print(string, end="")
             else:
                 print(string[TYPE], end="")
-        print("\", ", end="")
-        for index, arg in enumerate(statement[ARGUMENTS]):
-            val = self.evaluate_ast(arg, scope)
         
-            # Search variable from arg
-            print(f"{val[VALUE]}", end="")
+        if statement[ARGUMENTS]:
+            print("\", ", end="")
+            for index, arg in enumerate(statement[ARGUMENTS]):
+                val = self.evaluate_ast(arg, scope)
+            
+                # Search variable from arg
+                print(f"{val[VALUE]}", end="")
 
-            if index < len(statement[ARGUMENTS]) - 1:
-                print(", ", end="")
+                if index < len(statement[ARGUMENTS]) - 1:
+                    print(", ", end="")
+        else:
+            print("\"", end="")
         print(")")
 
                 
@@ -366,6 +377,9 @@ class Interpreter:
 
 
 def main(fpath: str) -> None:
+    print(sys.getrecursionlimit())
+    sys.setrecursionlimit(10000)
+
     interpreter = Interpreter(fpath)
     interpreter.tokenize()
     # interpreter.print_tokens()
@@ -378,5 +392,5 @@ if __name__ == "__main__":
     if (argc == 2):
         main(fpath=sys.argv[1])
     else:
-        # main(fpath=f"{os.path.dirname(__file__)}/examples/e1.c")
-        main(fpath=f"{os.path.dirname(__file__)}/example.c")
+        main(fpath=f"{os.path.dirname(__file__)}/examples/fibonacci.c")
+        # main(fpath=f"{os.path.dirname(__file__)}/example.c")
