@@ -53,7 +53,6 @@ VAR_LOOKUP:
 
 # https://en.cppreference.com/w/c/language/operator_precedence
 precedence = (
-    # TODO: prefix vs postfix increment
     ('left', 'LT', 'GT', 'LEQ', 'GEQ'),
     ('left', 'EQ', 'NE'),
     ('left', 'PLUS', 'MINUS'),

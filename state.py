@@ -11,7 +11,7 @@ class Variable:
         self.type = type_
         self.name = name_
         self.value = value_
-        self.address = None
+        self.address = self.allocate_mem()
 
     def __eq__(self, value: "Variable"):
         return self.name == value.name
@@ -21,6 +21,9 @@ class Variable:
     
     def __str__(self):
         return f"({self.type}, {self.name}, {self.value}, {self.address})"
+    
+    def allocate_mem(self):
+        pass
     
 class Literal:
     def __init__(self, type_, value_, negative_):

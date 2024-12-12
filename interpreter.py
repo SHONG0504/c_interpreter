@@ -279,14 +279,7 @@ class Interpreter:
                 raise Exception(err)
     
     def evaluate_function_call(self, statement: dict, scope: dict | list[dict]) -> dict:
-        # Input scope only required when evaluating arguments
-        if type(scope) == dict:
-            scope_list = [scope]
-        else:
-            scope_list = scope
-
         f_name = statement[VALUE][NAME]
-
         # Print function call to output
         print(f"{f_name}(", end="")
         # Initialize local variables from arguments
